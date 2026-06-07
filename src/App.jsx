@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import LandingPage from './components/LandingPage.jsx';
 import ScanningPage from './components/ScanningPage.jsx';
 import ResultsPage from './components/ResultsPage.jsx';
@@ -64,6 +65,7 @@ export default function App() {
           onReset={handleReset}
         />
       )}
+      <Analytics />
     </div>
   );
 }
