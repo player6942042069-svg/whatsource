@@ -131,24 +131,12 @@ async function runTraceMoe(imageBase64, mimeType) {
 async function runGemini(imageBase64, mimeType) {
   try {
     const key = process.env.GEMINI_API_KEY;
-    const prompt = `You are a media identification expert. Analyze this image carefully.
-Identify what movie, TV show, anime, K-drama, C-drama, or any other entertainment content this scene is from.
-Look for visual clues: art style, costumes, settings, characters, text overlays, logos, film grain, animation style.
+    const prompt = `Identify the movie, TV show, anime, K-drama, or any entertainment content shown in this image. Look at visual clues like art style, costumes, settings, characters, logos, and film style.
 
-Return ONLY a valid JSON object with these exact keys:
-{
-  "title": "exact official title in English (or romanized if no English title exists)",
-  "original_title": "title in original language if non-English",
-  "release_year": 2023,
-  "media_type": "movie" or "tv" or "anime",
-  "confidence_score": 85,
-  "episode_info": "Season X Episode Y if identifiable, otherwise null",
-  "content_warning": "adult" or "family" or "general",
-  "reason": "brief explanation of visual clues used"
-}
+Respond with ONLY a JSON object, no extra text, no markdown:
+{"title":"official English title or romanized title","original_title":"title in original language or null","release_year":2023,"media_type":"movie or tv or anime","confidence_score":85,"episode_info":"Season X Episode Y or null","content_warning":"adult or general","reason":"brief reason"}
 
-If you cannot identify it with reasonable confidence (below 60%), return:
-{ "title": null, "confidence_score": 0, "reason": "could not identify" }`;
+If unidentifiable, respond: {"title":null,"confidence_score":0,"reason":"cannot identify"}`;
 
     const body = {
       contents: [{
@@ -157,7 +145,7 @@ If you cannot identify it with reasonable confidence (below 60%), return:
           { text: prompt },
         ],
       }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 512 },
+      generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
     };
 
     const r = await fetch(
@@ -165,9 +153,21 @@ If you cannot identify it with reasonable confidence (below 60%), return:
       { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
     );
     const d = await r.json();
-    const text = d.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    const clean = text.replace(/```json|```/g, '').trim();
-    const parsed = JSON.parse(clean);
+
+    // Log full response for debugging
+    if (d.error) { console.warn('Gemini API error:', JSON.stringify(d.error)); return null; }
+    if (!d.candidates?.length) { console.warn('Gemini: no candidates, likely safety block. promptFeedback:', JSON.stringify(d.promptFeedback)); return null; }
+
+    const text = d.candidates[0]?.content?.parts?.[0]?.text || '';
+    if (!text.trim()) { console.warn('Gemini: empty text response'); return null; }
+
+    // Robustly extract JSON - find outermost { } block
+    const jsonMatch = text.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) { console.warn('Gemini: no JSON in response:', text.slice(0, 300)); return null; }
+
+    let parsed;
+    try { parsed = JSON.parse(jsonMatch[0]); }
+    catch (pe) { console.warn('Gemini JSON parse error:', pe.message, '| Raw:', jsonMatch[0].slice(0, 200)); return null; }
 
     if (!parsed.title || parsed.confidence_score < 60) return null;
     return {

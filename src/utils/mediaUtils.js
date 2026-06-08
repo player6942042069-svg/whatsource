@@ -111,10 +111,13 @@ export async function processUpload(file) {
   }
 }
 
-/** Get user's public IP for region detection */
+/** Get user's public IP - fast 2s timeout, silent fail */
 export async function getClientIp() {
   try {
-    const r = await fetch('https://api.ipify.org?format=json');
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 2000);
+    const r = await fetch('https://api64.ipify.org?format=json', { signal: ctrl.signal });
+    clearTimeout(t);
     const d = await r.json();
     return d.ip || '';
   } catch { return ''; }
