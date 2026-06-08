@@ -1,5 +1,10 @@
 {
+  "functions": {
+    "api/analyze.js": { "maxDuration": 30 },
+    "api/search.js":  { "maxDuration": 15 }
+  },
   "rewrites": [
-    { "source": "/(.*)", "destination": "/" }
+    { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/(.*)",     "destination": "/" }
   ]
 }

@@ -1,565 +1,505 @@
 import React, { useState, useRef, useCallback, useEffect } from 'react';
-import { globalSearchCount } from '../data/mockResults.js';
 
-/* ─── Shared tiny helpers ──────────────────────────────────────────── */
-function Logo({ size = 24, opacity = 1 }) {
+/* ─── Tiny reusable pieces ───────────────────────────────────────── */
+function Logo({ size = 'md' }) {
+  const s = size === 'sm' ? { tri: 18, text: 13 } : { tri: 26, text: 18 };
   return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 10, opacity }}>
-      <svg width={size} height={size} viewBox="0 0 24 24" fill="none">
-        <polygon points="12,2 22,20 2,20" fill="var(--accent)" />
-        <polygon points="12,7 18,18 6,18" fill="var(--bg-void)" />
+    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+      <svg width={s.tri} height={s.tri} viewBox="0 0 26 26" fill="none">
+        <polygon points="13,1 25,24 1,24" fill="var(--gold)" />
+        <polygon points="13,8 21,22 5,22"  fill="var(--black)" />
       </svg>
-      <span style={{
-        fontFamily: 'var(--font-display)', fontWeight: 800,
-        fontSize: size * 0.75, letterSpacing: '-0.03em', color: 'var(--text-primary)',
-      }}>WhatSource</span>
+      <span style={{ fontFamily: 'var(--fd)', fontWeight: 900, fontSize: s.text, letterSpacing: '-0.03em', color: 'var(--white)' }}>
+        WhatSource
+      </span>
     </div>
   );
 }
 
-/* ─── Animated grid background ─────────────────────────────────────── */
-function GridBg() {
+function Pill({ children, color = 'default' }) {
+  const styles = {
+    default: { bg: 'var(--surface2)', border: 'var(--border)',   text: 'var(--text-2)' },
+    gold:    { bg: 'var(--gold-dim)', border: 'var(--gold-glow)', text: 'var(--gold)'   },
+    green:   { bg: 'var(--green-dim)',border: 'rgba(0,230,118,0.25)', text: 'var(--green)' },
+  }[color];
   return (
-    <div style={{ position: 'absolute', inset: 0, overflow: 'hidden', pointerEvents: 'none' }}>
+    <span style={{
+      display: 'inline-flex', alignItems: 'center', gap: 6,
+      padding: '5px 12px', borderRadius: 'var(--r-full)',
+      background: styles.bg, border: `1px solid ${styles.border}`,
+      fontFamily: 'var(--fm)', fontSize: 10, letterSpacing: '0.12em',
+      color: styles.text, whiteSpace: 'nowrap',
+    }}>{children}</span>
+  );
+}
+
+/* ─── Live Search ────────────────────────────────────────────────── */
+function LiveSearch({ onResult }) {
+  const [q, setQ]           = useState('');
+  const [results, setRes]   = useState([]);
+  const [loading, setLoad]  = useState(false);
+  const [open, setOpen]     = useState(false);
+  const debounce            = useRef(null);
+  const wrapRef             = useRef(null);
+
+  const search = useCallback(async (val) => {
+    if (val.trim().length < 2) { setRes([]); setOpen(false); return; }
+    setLoad(true);
+    try {
+      const r = await fetch(`/api/search?q=${encodeURIComponent(val.trim())}`);
+      const d = await r.json();
+      setRes(d.results || []);
+      setOpen(true);
+    } catch { setRes([]); }
+    finally { setLoad(false); }
+  }, []);
+
+  const onChange = (e) => {
+    const val = e.target.value;
+    setQ(val);
+    clearTimeout(debounce.current);
+    debounce.current = setTimeout(() => search(val), 380);
+  };
+
+  // Close on outside click
+  useEffect(() => {
+    const handler = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const mediaTypeLabel = (t) => {
+    if (t === 'movie') return 'Movie';
+    if (t === 'anime') return 'Anime';
+    return 'Series';
+  };
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative', width: '100%' }}>
+      {/* Input row */}
       <div style={{
-        position: 'absolute', inset: 0,
-        backgroundImage: `
-          linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px),
-          linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px)
-        `,
-        backgroundSize: '64px 64px',
-        WebkitMaskImage: 'radial-gradient(ellipse 90% 70% at 50% 0%, black 20%, transparent 80%)',
-        maskImage: 'radial-gradient(ellipse 90% 70% at 50% 0%, black 20%, transparent 80%)',
-      }} />
-      {/* Central radial glow */}
-      <div style={{
-        position: 'absolute', top: 0, left: '50%', transform: 'translateX(-50%)',
-        width: '80%', height: '60%',
-        background: 'radial-gradient(ellipse at 50% 0%, rgba(59,130,246,0.07) 0%, transparent 70%)',
-      }} />
-      {/* Secondary off-center glow */}
-      <div style={{
-        position: 'absolute', top: '30%', left: '20%',
-        width: '40%', height: '40%',
-        background: 'radial-gradient(ellipse at 50% 50%, rgba(59,130,246,0.025) 0%, transparent 70%)',
-      }} />
+        display: 'flex', alignItems: 'center', gap: 0,
+        background: 'var(--surface)', border: '1px solid var(--border-2)',
+        borderRadius: 'var(--r-md)', overflow: 'hidden',
+        transition: 'border-color 0.2s',
+        ...(open ? { borderColor: 'var(--gold)', borderBottomLeftRadius: 0, borderBottomRightRadius: 0 } : {}),
+      }}>
+        <div style={{ padding: '0 14px', color: 'var(--text-3)', flexShrink: 0 }}>
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+        </div>
+        <input
+          type="text"
+          value={q}
+          onChange={onChange}
+          onFocus={() => results.length && setOpen(true)}
+          placeholder="Search any movie, anime, K-drama, series..."
+          style={{
+            flex: 1, padding: '14px 0', fontSize: 14, fontWeight: 400,
+            color: 'var(--text)', background: 'transparent',
+          }}
+        />
+        {loading && (
+          <div style={{ padding: '0 14px', flexShrink: 0 }}>
+            <div style={{ width: 16, height: 16, borderRadius: '50%', border: '2px solid var(--border-2)', borderTopColor: 'var(--gold)', animation: 'spin 0.8s linear infinite' }} />
+          </div>
+        )}
+        {q && !loading && (
+          <button onClick={() => { setQ(''); setRes([]); setOpen(false); }}
+            style={{ padding: '0 14px', color: 'var(--text-3)', fontSize: 18, lineHeight: 1 }}>×</button>
+        )}
+      </div>
+
+      {/* Results dropdown */}
+      {open && results.length > 0 && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 500,
+          background: 'var(--surface)', border: '1px solid var(--gold)',
+          borderTop: 'none', borderBottomLeftRadius: 'var(--r-md)', borderBottomRightRadius: 'var(--r-md)',
+          maxHeight: 360, overflowY: 'auto',
+          boxShadow: '0 16px 48px rgba(0,0,0,0.7)',
+        }}>
+          {results.map((item, i) => (
+            <SearchResultRow key={item.id || i} item={item} onClick={() => { setOpen(false); setQ(item.title); onResult(item); }} />
+          ))}
+        </div>
+      )}
+
+      {open && !loading && q.length >= 2 && results.length === 0 && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 500,
+          background: 'var(--surface)', border: '1px solid var(--border-2)',
+          borderTop: 'none', borderBottomLeftRadius: 'var(--r-md)', borderBottomRightRadius: 'var(--r-md)',
+          padding: '20px', textAlign: 'center',
+          fontFamily: 'var(--fm)', fontSize: 12, color: 'var(--text-3)',
+        }}>
+          No results found for "{q}"
+        </div>
+      )}
     </div>
   );
 }
 
-/* ─── Corner brackets for the drop zone ────────────────────────────── */
-function CornerBrackets({ active }) {
-  const c = active ? 'var(--accent)' : 'rgba(255,255,255,0.14)';
-  const w = 28;
-  const positions = [
-    { top: -1, left: -1, borderTop: `1.5px solid ${c}`, borderLeft: `1.5px solid ${c}` },
-    { top: -1, right: -1, borderTop: `1.5px solid ${c}`, borderRight: `1.5px solid ${c}` },
-    { bottom: -1, left: -1, borderBottom: `1.5px solid ${c}`, borderLeft: `1.5px solid ${c}` },
-    { bottom: -1, right: -1, borderBottom: `1.5px solid ${c}`, borderRight: `1.5px solid ${c}` },
-  ];
-  return <>
-    {positions.map((s, i) => (
-      <div key={i} style={{ position: 'absolute', width: w, height: w, transition: 'all 0.3s ease', ...s }} />
-    ))}
-  </>;
-}
-
-/* ─── Demo tile ─────────────────────────────────────────────────────── */
-function DemoTile({ demo, onClick }) {
+function SearchResultRow({ item, onClick }) {
   const [h, setH] = useState(false);
+  const [imgErr, setImgErr] = useState(false);
   return (
-    <button
+    <div
       onClick={onClick}
       onMouseEnter={() => setH(true)}
       onMouseLeave={() => setH(false)}
       style={{
-        background: h ? 'rgba(255,255,255,0.055)' : 'rgba(255,255,255,0.025)',
-        border: `1px solid ${h ? 'rgba(255,255,255,0.15)' : 'rgba(255,255,255,0.06)'}`,
-        borderRadius: 14, padding: '22px 18px', cursor: 'pointer',
-        transition: 'all 0.22s ease',
-        transform: h ? 'translateY(-3px)' : 'none',
-        boxShadow: h ? '0 12px 40px rgba(0,0,0,0.4)' : 'none',
-        textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 10,
+        display: 'flex', alignItems: 'center', gap: 12,
+        padding: '10px 14px', cursor: 'pointer',
+        background: h ? 'rgba(255,229,0,0.04)' : 'transparent',
+        borderBottom: '1px solid var(--border)',
+        transition: 'background 0.15s',
       }}
     >
-      <div style={{ fontSize: 30 }}>{demo.thumb}</div>
-      <div>
-        <div style={{
-          fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 13.5,
-          color: h ? 'var(--text-primary)' : 'var(--text-secondary)',
-          letterSpacing: '-0.01em', lineHeight: 1.3,
-        }}>{demo.label}</div>
-        <div style={{
-          fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em',
-          color: h ? 'var(--accent)' : 'var(--text-muted)',
-          marginTop: 5, transition: 'color 0.2s',
-        }}>TRY DEMO →</div>
+      <div style={{ width: 36, height: 52, borderRadius: 4, overflow: 'hidden', flexShrink: 0, background: 'var(--surface3)' }}>
+        {item.poster && !imgErr
+          ? <img src={item.poster} alt="" onError={() => setImgErr(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          : <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-3)', fontSize: 16 }}>?</div>
+        }
       </div>
-    </button>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontWeight: 600, fontSize: 14, color: h ? 'var(--gold)' : 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', transition: 'color 0.15s' }}>
+          {item.title}
+        </div>
+        <div style={{ fontFamily: 'var(--fm)', fontSize: 10, color: 'var(--text-3)', marginTop: 3, letterSpacing: '0.08em' }}>
+          {[item.type, item.year].filter(Boolean).join(' · ')}
+          {item.isAdult && <span style={{ marginLeft: 6, color: 'var(--red)', fontWeight: 600 }}>18+</span>}
+        </div>
+      </div>
+      {item.score && (
+        <span style={{ fontFamily: 'var(--fm)', fontSize: 11, color: 'var(--gold)', flexShrink: 0 }}>★ {item.score}</span>
+      )}
+    </div>
   );
 }
 
-/* ─── Step card for "How it works" ─────────────────────────────────── */
-function StepCard({ num, icon, title, desc }) {
+/* ─── Upload Zone ────────────────────────────────────────────────── */
+function UploadZone({ onFile }) {
+  const [drag, setDrag] = useState(false);
+  const inputRef = useRef(null);
+
+  const handleFile = useCallback((file) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) return;
+    onFile(file);
+  }, [onFile]);
+
+  const onDrop = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    setDrag(false);
+    handleFile(e.dataTransfer.files?.[0]);
+  };
+  const onDragOver  = (e) => { e.preventDefault(); e.stopPropagation(); setDrag(true); };
+  const onDragLeave = (e) => { e.preventDefault(); e.stopPropagation(); setDrag(false); };
+  const onDragEnter = (e) => { e.preventDefault(); e.stopPropagation(); setDrag(true); };
+
+  return (
+    <div
+      onDrop={onDrop}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDragEnter={onDragEnter}
+      onClick={() => inputRef.current?.click()}
+      style={{
+        position: 'relative',
+        border: `2px dashed ${drag ? 'var(--gold)' : 'rgba(255,255,255,0.14)'}`,
+        borderRadius: 'var(--r-lg)',
+        padding: '44px 32px',
+        textAlign: 'center',
+        cursor: 'pointer',
+        background: drag ? 'rgba(255,229,0,0.04)' : 'rgba(255,255,255,0.015)',
+        transition: 'all 0.25s var(--ease)',
+        boxShadow: drag ? '0 0 60px rgba(255,229,0,0.08)' : 'none',
+      }}
+    >
+      {/* Corner accents */}
+      {[
+        { top: -2, left: -2,   borderTop: '2px solid var(--gold)', borderLeft: '2px solid var(--gold)' },
+        { top: -2, right: -2,  borderTop: '2px solid var(--gold)', borderRight: '2px solid var(--gold)' },
+        { bottom: -2, left: -2,  borderBottom: '2px solid var(--gold)', borderLeft: '2px solid var(--gold)' },
+        { bottom: -2, right: -2, borderBottom: '2px solid var(--gold)', borderRight: '2px solid var(--gold)' },
+      ].map((s, i) => (
+        <div key={i} style={{ position: 'absolute', width: 20, height: 20, opacity: drag ? 1 : 0.4, transition: 'opacity 0.25s', ...s }} />
+      ))}
+
+      <div style={{ animation: 'float-up 3.5s ease-in-out infinite' }}>
+        <div style={{
+          width: 64, height: 64, margin: '0 auto 20px',
+          borderRadius: '50%',
+          background: drag ? 'rgba(255,229,0,0.12)' : 'var(--surface2)',
+          border: `1px solid ${drag ? 'rgba(255,229,0,0.3)' : 'var(--border)'}`,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          transition: 'all 0.25s',
+        }}>
+          <svg width="26" height="26" viewBox="0 0 24 24" fill="none"
+            stroke={drag ? 'var(--gold)' : 'var(--text-2)'} strokeWidth="1.5">
+            <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" strokeLinecap="round" strokeLinejoin="round"/>
+            <polyline points="17 8 12 3 7 8" strokeLinecap="round" strokeLinejoin="round"/>
+            <line x1="12" y1="3" x2="12" y2="15" strokeLinecap="round"/>
+          </svg>
+        </div>
+      </div>
+
+      <div style={{ fontFamily: 'var(--fd)', fontWeight: 700, fontSize: 16, letterSpacing: '-0.02em', color: drag ? 'var(--gold)' : 'var(--text)', marginBottom: 8, transition: 'color 0.25s' }}>
+        {drag ? 'Release to analyze' : 'Drop your file here'}
+      </div>
+      <div style={{ fontFamily: 'var(--fm)', fontSize: 10, letterSpacing: '0.1em', color: 'var(--text-3)', marginBottom: 22 }}>
+        PNG · JPG · WEBP · MP4 · MOV · UP TO 50MB
+      </div>
+
+      <button
+        onClick={e => { e.stopPropagation(); inputRef.current?.click(); }}
+        onMouseEnter={e => { e.currentTarget.style.background = 'var(--gold)'; e.currentTarget.style.color = 'var(--black)'; }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--gold)'; }}
+        style={{
+          fontFamily: 'var(--fm)', fontSize: 11, letterSpacing: '0.1em',
+          color: 'var(--gold)', background: 'transparent',
+          border: '1px solid var(--gold)', borderRadius: 'var(--r-full)',
+          padding: '10px 28px', transition: 'all 0.2s',
+        }}
+      >BROWSE FILES</button>
+
+      <input ref={inputRef} type="file" accept="image/*,video/mp4,video/quicktime,video/webm"
+        onChange={e => handleFile(e.target.files?.[0])}
+        style={{ display: 'none' }} />
+    </div>
+  );
+}
+
+/* ─── Main Page ──────────────────────────────────────────────────── */
+export default function LandingPage({ onVisualUpload, onSearchResult, error, onClearError }) {
+  const [tab, setTab]     = useState('upload'); // 'upload' | 'paste' | 'search'
+  const [visible, setVis] = useState(false);
+  const [counter, setCtr] = useState(0);
+
+  useEffect(() => {
+    setTimeout(() => setVis(true), 60);
+    // Animate counter
+    const target = 3194827, dur = 2600, start = Date.now();
+    const tick = () => {
+      const p = Math.min((Date.now() - start) / dur, 1);
+      const e = 1 - Math.pow(1 - p, 4);
+      setCtr(Math.floor(e * target));
+      if (p < 1) requestAnimationFrame(tick);
+    };
+    const t = setTimeout(() => requestAnimationFrame(tick), 800);
+    return () => clearTimeout(t);
+  }, []);
+
+  const steps = [
+    { n: '01', title: 'Upload', desc: 'Drop a screenshot, paste from clipboard (Ctrl+V), or type the title. Works with cropped, mirrored, and compressed media.' },
+    { n: '02', title: 'Identify', desc: 'Trace.moe handles anime scenes. Gemini Vision handles all live-action. Both run in parallel for maximum accuracy.' },
+    { n: '03', title: 'Discover', desc: 'Get real metadata, cast, ratings, the full franchise timeline, and every streaming platform available in your country.' },
+  ];
+
+  const supported = ['Hollywood', 'Anime', 'K-Drama', 'C-Drama', 'J-Drama', 'Bollywood', 'Turkish Dizi', 'Filipino Series', 'Thai Drama', 'African Cinema', 'European Film', 'Latin Telenovela', 'Donghua', 'OVA & Specials', 'Mini-Series', 'Documentary'];
+
+  return (
+    <div style={{ minHeight: '100vh', background: 'var(--black)', opacity: visible ? 1 : 0, transition: 'opacity 0.5s' }}>
+
+      {/* ── NAV ── */}
+      <nav style={{
+        position: 'fixed', inset: '0 0 auto', zIndex: 100,
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        padding: '0 clamp(20px,4vw,64px)', height: 60,
+        background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(20px)',
+        borderBottom: '1px solid var(--border)',
+      }}>
+        <Logo />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--green)', animation: 'pulse-ring 2s ease-in-out infinite' }} />
+          <span style={{ fontFamily: 'var(--fm)', fontSize: 10, letterSpacing: '0.1em', color: 'var(--text-2)' }}>LIVE</span>
+        </div>
+      </nav>
+
+      {/* ── HERO ── */}
+      <div style={{
+        minHeight: '100vh', paddingTop: 60,
+        display: 'grid',
+        gridTemplateColumns: '1fr 1fr',
+        maxWidth: 1440, margin: '0 auto',
+        padding: '0 clamp(20px,4vw,80px)',
+        gap: 48, alignItems: 'center',
+      }}>
+
+        {/* LEFT — Headline */}
+        <div style={{ paddingTop: 40 }}>
+          <div className="fade-up d1" style={{ marginBottom: 24 }}>
+            <Pill color="gold">
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--gold)', display: 'inline-block' }} />
+              VISUAL MEDIA IDENTIFICATION
+            </Pill>
+          </div>
+
+          <h1 className="display-xl fade-up d2" style={{ color: 'var(--white)', marginBottom: 10 }}>
+            IDENTIFY
+          </h1>
+          <h1 className="display-xl fade-up d3" style={{ color: 'var(--text-2)', marginBottom: 10 }}>
+            ANY SCENE
+          </h1>
+          <h1 className="display-xl fade-up d4" style={{ color: 'var(--white)' }}>
+            INSTANTLY<span style={{ color: 'var(--gold)' }}>.</span>
+          </h1>
+
+          <p className="fade-up d5" style={{
+            fontFamily: 'var(--fb)', fontWeight: 300, fontSize: 'clamp(14px,1.5vw,17px)',
+            color: 'var(--text-2)', lineHeight: 1.8, maxWidth: 480, marginTop: 32, marginBottom: 40,
+          }}>
+            Upload a screenshot, paste from clipboard, or type the title.
+            WhatSource identifies any movie, anime, K-drama, or series from
+            anywhere in the world — then shows you exactly where to stream it.
+          </p>
+
+          {/* Stats */}
+          <div className="fade-up d6" style={{ display: 'flex', gap: 40, flexWrap: 'wrap' }}>
+            <Stat value={counter.toLocaleString()} label="Scenes Identified" />
+            <div style={{ width: 1, background: 'var(--border)' }} />
+            <Stat value="190+" label="Countries" />
+            <div style={{ width: 1, background: 'var(--border)' }} />
+            <Stat value="16" label="Content Types" />
+          </div>
+        </div>
+
+        {/* RIGHT — Input Card */}
+        <div className="scale-up d3" style={{
+          background: 'var(--surface)',
+          border: '1px solid var(--border-2)',
+          borderRadius: 'var(--r-xl)',
+          padding: 28,
+          boxShadow: '0 32px 80px rgba(0,0,0,0.6)',
+        }}>
+          {/* Error banner */}
+          {error && (
+            <div style={{
+              marginBottom: 16, padding: '12px 16px', borderRadius: 'var(--r-sm)',
+              background: 'var(--red-dim)', border: '1px solid rgba(255,61,61,0.25)',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+            }}>
+              <span style={{ fontFamily: 'var(--fb)', fontSize: 13, color: 'var(--red)' }}>{error}</span>
+              <button onClick={onClearError} style={{ color: 'var(--red)', fontSize: 18, lineHeight: 1 }}>×</button>
+            </div>
+          )}
+
+          {/* Paste hint banner */}
+          <div style={{
+            display: 'flex', alignItems: 'center', gap: 10,
+            padding: '10px 14px', borderRadius: 'var(--r-sm)',
+            background: 'var(--gold-dim)', border: '1px solid rgba(255,229,0,0.15)',
+            marginBottom: 20,
+          }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gold)" strokeWidth="2">
+              <rect x="9" y="2" width="6" height="4" rx="1"/><path d="M6 6h12a2 2 0 012 2v12a2 2 0 01-2 2H6a2 2 0 01-2-2V8a2 2 0 012-2z"/>
+            </svg>
+            <span style={{ fontFamily: 'var(--fm)', fontSize: 10, letterSpacing: '0.08em', color: 'var(--gold)' }}>
+              CTRL+V ANYWHERE ON THIS PAGE TO PASTE A SCREENSHOT
+            </span>
+          </div>
+
+          {/* Input Tabs */}
+          <div style={{ display: 'flex', gap: 4, marginBottom: 20, background: 'var(--surface2)', borderRadius: 'var(--r-sm)', padding: 4 }}>
+            {[['upload', '↑ Upload'], ['search', '⌕ Search']].map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setTab(key)}
+                style={{
+                  flex: 1, padding: '9px 0',
+                  fontFamily: 'var(--fm)', fontSize: 11, letterSpacing: '0.08em',
+                  borderRadius: 'var(--r-xs)',
+                  color: tab === key ? 'var(--black)' : 'var(--text-2)',
+                  background: tab === key ? 'var(--gold)' : 'transparent',
+                  transition: 'all 0.2s',
+                  fontWeight: tab === key ? 600 : 400,
+                }}
+              >{label}</button>
+            ))}
+          </div>
+
+          {/* Upload Pane */}
+          {tab === 'upload' && <UploadZone onFile={onVisualUpload} />}
+
+          {/* Search Pane */}
+          {tab === 'search' && (
+            <div>
+              <LiveSearch onResult={onSearchResult} />
+              <div style={{ marginTop: 14, fontFamily: 'var(--fm)', fontSize: 10, letterSpacing: '0.08em', color: 'var(--text-3)', textAlign: 'center' }}>
+                Searches TMDB · AniList · Jikan · TVMaze in real time
+              </div>
+            </div>
+          )}
+
+          {/* Supported types */}
+          <div style={{ marginTop: 20, paddingTop: 20, borderTop: '1px solid var(--border)' }}>
+            <div style={{ fontFamily: 'var(--fm)', fontSize: 9, letterSpacing: '0.14em', color: 'var(--text-3)', marginBottom: 10 }}>SUPPORTED CONTENT</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+              {supported.map(t => (
+                <span key={t} style={{
+                  fontFamily: 'var(--fb)', fontSize: 11,
+                  color: 'var(--text-2)', background: 'var(--surface2)',
+                  border: '1px solid var(--border)',
+                  borderRadius: 'var(--r-full)', padding: '3px 10px',
+                }}>{t}</span>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── HOW IT WORKS ── */}
+      <section style={{ maxWidth: 1440, margin: '0 auto', padding: 'clamp(60px,8vw,120px) clamp(20px,4vw,80px)' }}>
+        <div style={{ fontFamily: 'var(--fm)', fontSize: 10, letterSpacing: '0.18em', color: 'var(--gold)', marginBottom: 20, textTransform: 'uppercase' }}>HOW IT WORKS</div>
+        <h2 className="display-lg" style={{ color: 'var(--white)', marginBottom: 60 }}>
+          Three steps.<br />
+          <span style={{ color: 'var(--text-2)' }}>One answer.</span>
+        </h2>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 20 }}>
+          {steps.map((s, i) => <StepCard key={i} {...s} />)}
+        </div>
+      </section>
+
+      {/* ── FOOTER ── */}
+      <footer style={{ borderTop: '1px solid var(--border)', padding: '28px clamp(20px,4vw,64px)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', maxWidth: 1440, margin: '0 auto' }}>
+        <Logo size="sm" />
+        <span style={{ fontFamily: 'var(--fm)', fontSize: 10, color: 'var(--text-3)', letterSpacing: '0.06em' }}>
+          © 2025 WhatSource · Powered by Gemini · TMDB · Trace.moe · AniList
+        </span>
+      </footer>
+    </div>
+  );
+}
+
+function Stat({ value, label }) {
+  return (
+    <div>
+      <div style={{ fontFamily: 'var(--fd)', fontWeight: 900, fontSize: 'clamp(22px,3vw,36px)', letterSpacing: '-0.03em', color: 'var(--white)', lineHeight: 1 }}>{value}</div>
+      <div style={{ fontFamily: 'var(--fm)', fontSize: 9, letterSpacing: '0.14em', color: 'var(--text-3)', marginTop: 5, textTransform: 'uppercase' }}>{label}</div>
+    </div>
+  );
+}
+
+function StepCard({ n, title, desc }) {
   const [h, setH] = useState(false);
   return (
     <div
       onMouseEnter={() => setH(true)}
       onMouseLeave={() => setH(false)}
       style={{
-        padding: '36px 32px', borderRadius: 16,
-        border: `1px solid ${h ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.05)'}`,
-        background: h ? 'rgba(255,255,255,0.028)' : 'rgba(255,255,255,0.01)',
-        transition: 'all 0.3s ease',
-        transform: h ? 'translateY(-5px)' : 'none',
-        boxShadow: h ? '0 20px 60px rgba(0,0,0,0.35)' : 'none',
+        padding: '36px 32px',
+        border: `1px solid ${h ? 'var(--gold)' : 'var(--border)'}`,
+        borderRadius: 'var(--r-lg)',
+        background: h ? 'rgba(255,229,0,0.03)' : 'var(--surface)',
+        transition: 'all 0.25s var(--ease)',
+        transform: h ? 'translateY(-4px)' : 'none',
       }}
     >
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28 }}>
-        <span style={{
-          fontFamily: 'var(--font-mono)', fontSize: 42, fontWeight: 400,
-          color: 'rgba(255,255,255,0.04)', lineHeight: 1, userSelect: 'none',
-        }}>{num}</span>
-        <div style={{
-          width: 44, height: 44, borderRadius: 10,
-          background: 'rgba(59,130,246,0.08)',
-          border: '1px solid rgba(59,130,246,0.18)',
-          display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: 'var(--accent)',
-        }}>{icon}</div>
-      </div>
-      <div style={{
-        fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 20,
-        letterSpacing: '-0.02em', color: 'var(--text-primary)', marginBottom: 12,
-      }}>{title}</div>
-      <div style={{
-        fontFamily: 'var(--font-body)', fontWeight: 300, fontSize: 14,
-        color: 'var(--text-secondary)', lineHeight: 1.75,
-      }}>{desc}</div>
-    </div>
-  );
-}
-
-/* ─── Main export ───────────────────────────────────────────────────── */
-export default function LandingPage({ onUpload, onDemo, demoTriggers }) {
-  const [dragging, setDragging] = useState(false);
-  const [hover, setHover] = useState(false);
-  const [counter, setCounter] = useState(0);
-  const [mounted, setMounted] = useState(false);
-  const fileInputRef = useRef(null);
-
-  useEffect(() => {
-    setTimeout(() => setMounted(true), 80);
-    // Animated counter
-    const dur = 2800, start = Date.now();
-    const tick = () => {
-      const p = Math.min((Date.now() - start) / dur, 1);
-      setCounter(Math.floor((1 - Math.pow(1 - p, 4)) * globalSearchCount));
-      if (p < 1) requestAnimationFrame(tick);
-    };
-    const t = setTimeout(() => requestAnimationFrame(tick), 900);
-    return () => clearTimeout(t);
-  }, []);
-
-  const handleFile = useCallback((file) => {
-    if (!file) return;
-    if (!file.type.startsWith('image/') && !file.type.startsWith('video/')) return;
-    const fr = new FileReader();
-    fr.onload = (e) => onUpload(file, e.target.result);
-    fr.readAsDataURL(file);
-  }, [onUpload]);
-
-  const onDrop = useCallback((e) => {
-    e.preventDefault(); setDragging(false); setHover(false);
-    handleFile(e.dataTransfer.files[0]);
-  }, [handleFile]);
-
-  const active = dragging || hover;
-
-  const steps = [
-    {
-      num: '01', title: 'Upload',
-      desc: 'Drop any screenshot or short video clip — cropped, mirrored, color-graded, or compressed. Our engine handles it.',
-      icon: <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>,
-    },
-    {
-      num: '02', title: 'Analyze',
-      desc: 'Multimodal embeddings are generated and matched against 847M indexed frames across global cinema, anime, and international series.',
-      icon: <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>,
-    },
-    {
-      num: '03', title: 'Discover',
-      desc: 'Get the exact title and episode number, the full franchise viewing order, and every legal streaming platform available in your country.',
-      icon: <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>,
-    },
-  ];
-
-  const contentTypes = [
-    'Hollywood Films', 'Anime & Manga', 'K-Dramas', 'C-Dramas',
-    'African Cinema', 'Philippine Series', 'Bollywood', 'European Films',
-    'TV Series', 'OVAs & Specials', 'Donghua', 'Thai Dramas', 'Short Films', 'Mini-Series',
-  ];
-
-  return (
-    <div style={{ minHeight: '100vh', background: 'var(--bg-void)', position: 'relative', overflowX: 'hidden' }}>
-      <GridBg />
-
-      {/* ── NAV ── */}
-      <nav style={{
-        position: 'fixed', top: 0, left: 0, right: 0, zIndex: 200,
-        padding: '0 48px', height: 64,
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        borderBottom: '1px solid rgba(255,255,255,0.04)',
-        background: 'rgba(3,5,7,0.85)', backdropFilter: 'blur(24px)',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <Logo size={22} />
-          <span style={{
-            fontFamily: 'var(--font-mono)', fontSize: 9, letterSpacing: '0.12em',
-            color: 'var(--accent)', background: 'rgba(59,130,246,0.1)',
-            border: '1px solid rgba(59,130,246,0.25)', borderRadius: 99, padding: '3px 9px',
-          }}>BETA</span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 40 }}>
-          {['HOW IT WORKS', 'ABOUT'].map(label => (
-            <span key={label} style={{
-              fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '0.1em',
-              color: 'var(--text-muted)', cursor: 'pointer', transition: 'color 0.2s',
-            }}
-              onMouseEnter={e => e.target.style.color = 'var(--text-secondary)'}
-              onMouseLeave={e => e.target.style.color = 'var(--text-muted)'}
-            >{label}</span>
-          ))}
-        </div>
-      </nav>
-
-      {/* ── HERO ── */}
-      <section style={{
-        paddingTop: 168, paddingBottom: 80,
-        paddingLeft: 'clamp(24px, 4vw, 80px)', paddingRight: 'clamp(24px, 4vw, 80px)',
-        maxWidth: 1280, margin: '0 auto',
-        opacity: mounted ? 1 : 0, transition: 'opacity 0.7s ease',
-      }}>
-
-        {/* Status chip */}
-        <div style={{
-          display: 'inline-flex', alignItems: 'center', gap: 9, marginBottom: 52,
-          padding: '7px 16px', borderRadius: 99,
-          border: '1px solid rgba(255,255,255,0.07)',
-          background: 'rgba(255,255,255,0.022)',
-        }}>
-          <div style={{
-            width: 6, height: 6, borderRadius: '50%', background: 'var(--success)',
-            animation: 'pulse-opacity 2s ease-in-out infinite',
-          }} />
-          <span style={{
-            fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '0.12em',
-            color: 'var(--text-secondary)', textTransform: 'uppercase',
-          }}>Visual Media Identification Engine</span>
-        </div>
-
-        {/* Big headline */}
-        <h1 style={{
-          fontFamily: 'var(--font-display)', fontWeight: 800,
-          fontSize: 'clamp(52px, 9vw, 118px)',
-          lineHeight: 0.9, letterSpacing: '-0.035em',
-          marginBottom: 36,
-        }}>
-          <div style={{ animation: 'fadeInUp 0.7s ease both', animationDelay: '0.1s', color: 'var(--text-primary)' }}>
-            Any frame.
-          </div>
-          <div style={{ animation: 'fadeInUp 0.7s ease both', animationDelay: '0.22s', color: 'var(--text-secondary)' }}>
-            Any scene.
-          </div>
-          <div style={{ animation: 'fadeInUp 0.7s ease both', animationDelay: '0.36s', color: 'var(--text-primary)' }}>
-            Identified<span style={{ color: 'var(--accent)' }}>.</span>
-          </div>
-        </h1>
-
-        <p style={{
-          fontFamily: 'var(--font-body)', fontWeight: 300,
-          fontSize: 'clamp(15px, 1.8vw, 19px)',
-          color: 'var(--text-secondary)', maxWidth: 500, lineHeight: 1.8,
-          marginBottom: 72,
-          animation: 'fadeInUp 0.7s ease both', animationDelay: '0.5s',
-        }}>
-          Upload a screenshot or short clip. WhatSource identifies the exact movie,
-          anime, K-drama, or series — then maps the full franchise and shows you
-          where to stream it legally, in your country.
-        </p>
-
-        {/* ── UPLOAD ZONE ── */}
-        <div
-          onDrop={onDrop}
-          onDragOver={(e) => { e.preventDefault(); setDragging(true); setHover(true); }}
-          onDragLeave={() => { setDragging(false); setHover(false); }}
-          onMouseEnter={() => setHover(true)}
-          onMouseLeave={() => { if (!dragging) setHover(false); }}
-          onClick={() => fileInputRef.current?.click()}
-          style={{
-            position: 'relative', borderRadius: 20, padding: '70px 48px',
-            background: active ? 'rgba(59,130,246,0.045)' : 'rgba(255,255,255,0.012)',
-            border: `1.5px dashed ${active ? 'rgba(59,130,246,0.55)' : 'rgba(255,255,255,0.1)'}`,
-            cursor: 'pointer', transition: 'all 0.3s ease',
-            boxShadow: active
-              ? '0 0 80px rgba(59,130,246,0.08), inset 0 0 80px rgba(59,130,246,0.02)'
-              : 'none',
-            animation: 'fadeInUp 0.7s ease both', animationDelay: '0.62s',
-          }}
-        >
-          <CornerBrackets active={active} />
-
-          <div style={{ textAlign: 'center' }}>
-            {/* Icon */}
-            <div style={{
-              width: 72, height: 72, margin: '0 auto 28px',
-              borderRadius: '50%',
-              background: active ? 'rgba(59,130,246,0.14)' : 'rgba(255,255,255,0.04)',
-              border: `1px solid ${active ? 'rgba(59,130,246,0.35)' : 'rgba(255,255,255,0.08)'}`,
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              transition: 'all 0.3s ease',
-              animation: 'float 4s ease-in-out infinite',
-            }}>
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none"
-                stroke={active ? 'var(--accent)' : 'var(--text-secondary)'} strokeWidth="1.4">
-                <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4" strokeLinecap="round" strokeLinejoin="round"/>
-                <polyline points="17 8 12 3 7 8" strokeLinecap="round" strokeLinejoin="round"/>
-                <line x1="12" y1="3" x2="12" y2="15" strokeLinecap="round"/>
-              </svg>
-            </div>
-
-            <div style={{
-              fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 22,
-              letterSpacing: '-0.02em',
-              color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
-              marginBottom: 10, transition: 'color 0.3s',
-            }}>
-              {dragging ? 'Release to analyze' : 'Drop your screenshot or clip here'}
-            </div>
-
-            <div style={{
-              fontFamily: 'var(--font-body)', fontSize: 13.5,
-              color: 'var(--text-muted)', marginBottom: 32, letterSpacing: '0.01em',
-            }}>
-              PNG · JPG · WebP · MP4 · MOV &nbsp;·&nbsp; Up to 50MB
-            </div>
-
-            <button style={{
-              fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '0.09em',
-              color: 'var(--accent)', background: 'rgba(59,130,246,0.09)',
-              border: '1px solid rgba(59,130,246,0.25)', borderRadius: 99,
-              padding: '11px 28px', transition: 'all 0.2s ease', cursor: 'pointer',
-            }}
-              onMouseEnter={e => { e.currentTarget.style.background = 'rgba(59,130,246,0.16)'; e.currentTarget.style.borderColor = 'rgba(59,130,246,0.4)'; }}
-              onMouseLeave={e => { e.currentTarget.style.background = 'rgba(59,130,246,0.09)'; e.currentTarget.style.borderColor = 'rgba(59,130,246,0.25)'; }}
-            >
-              BROWSE FILES
-            </button>
-          </div>
-
-          <input
-            ref={fileInputRef} type="file"
-            accept="image/png,image/jpeg,image/webp,video/mp4,video/quicktime"
-            style={{ display: 'none' }}
-            onChange={e => handleFile(e.target.files[0])}
-          />
-        </div>
-
-        {/* ── DEMO TILES ── */}
-        <div style={{ marginTop: 52, animation: 'fadeInUp 0.7s ease both', animationDelay: '0.76s' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 20 }}>
-            <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.05)' }} />
-            <span style={{
-              fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '0.14em',
-              color: 'var(--text-muted)',
-            }}>OR TRY A DEMO</span>
-            <div style={{ flex: 1, height: 1, background: 'rgba(255,255,255,0.05)' }} />
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-            {demoTriggers.map(d => (
-              <DemoTile key={d.key} demo={d} onClick={() => onDemo(d.key)} />
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── STATS BAND ── */}
-      <div style={{
-        margin: '0 clamp(24px, 4vw, 80px)',
-        borderTop: '1px solid rgba(255,255,255,0.05)',
-        borderBottom: '1px solid rgba(255,255,255,0.05)',
-        padding: '60px 0',
-        display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 80,
-        background: 'rgba(255,255,255,0.008)',
-      }}>
-        <StatBlock value={counter.toLocaleString()} label="Scenes Identified" sub="Global · Live Count" />
-        <div style={{ width: 1, height: 48, background: 'rgba(255,255,255,0.07)' }} />
-        <StatBlock value="47" label="Content Categories" sub="From Hollywood to Donghua" />
-        <div style={{ width: 1, height: 48, background: 'rgba(255,255,255,0.07)' }} />
-        <StatBlock value="190+" label="Countries" sub="Geo-aware Streaming Search" />
-      </div>
-
-      {/* ── HOW IT WORKS ── */}
-      <section style={{
-        maxWidth: 1280, margin: '0 auto',
-        padding: `100px clamp(24px, 4vw, 80px)`,
-      }}>
-        <div style={{
-          fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '0.16em',
-          color: 'var(--accent)', marginBottom: 18, textTransform: 'uppercase',
-        }}>How It Works</div>
-        <h2 style={{
-          fontFamily: 'var(--font-display)', fontWeight: 800,
-          fontSize: 'clamp(30px, 4.5vw, 56px)',
-          letterSpacing: '-0.03em', marginBottom: 64,
-          color: 'var(--text-primary)', lineHeight: 1.05,
-        }}>
-          Three steps.<br /><span style={{ color: 'var(--text-secondary)' }}>One answer.</span>
-        </h2>
-
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 20 }}>
-          {steps.map((s, i) => (
-            <StepCard key={i} {...s} />
-          ))}
-        </div>
-
-        {/* Content type cloud */}
-        <div style={{
-          marginTop: 80, padding: '36px 40px', borderRadius: 16,
-          border: '1px solid rgba(255,255,255,0.05)',
-          background: 'rgba(255,255,255,0.012)',
-        }}>
-          <div style={{
-            fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.15em',
-            color: 'var(--text-muted)', marginBottom: 22, textTransform: 'uppercase',
-          }}>Supported Content</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 9 }}>
-            {contentTypes.map(tag => (
-              <span key={tag} style={{
-                fontFamily: 'var(--font-body)', fontSize: 13,
-                color: 'var(--text-secondary)',
-                background: 'rgba(255,255,255,0.035)',
-                border: '1px solid rgba(255,255,255,0.06)',
-                borderRadius: 99, padding: '6px 16px',
-              }}>{tag}</span>
-            ))}
-            <span style={{
-              fontFamily: 'var(--font-body)', fontSize: 13,
-              color: 'var(--accent)',
-              background: 'rgba(59,130,246,0.07)',
-              border: '1px solid rgba(59,130,246,0.18)',
-              borderRadius: 99, padding: '6px 16px',
-            }}>+ 33 more</span>
-          </div>
-        </div>
-      </section>
-
-      {/* ── OBFUSCATION CALLOUT ── */}
-      <section style={{
-        maxWidth: 1280, margin: '0 auto',
-        padding: `0 clamp(24px, 4vw, 80px) 100px`,
-      }}>
-        <div style={{
-          position: 'relative', borderRadius: 20, overflow: 'hidden',
-          border: '1px solid rgba(59,130,246,0.12)',
-          background: 'linear-gradient(135deg, rgba(59,130,246,0.05) 0%, rgba(255,255,255,0.01) 100%)',
-          padding: '56px 60px',
-          display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 48, alignItems: 'center',
-        }}>
-          {/* Decorative circle */}
-          <div style={{
-            position: 'absolute', top: -60, right: -60,
-            width: 240, height: 240, borderRadius: '50%',
-            background: 'radial-gradient(circle, rgba(59,130,246,0.06) 0%, transparent 70%)',
-            pointerEvents: 'none',
-          }} />
-
-          <div>
-            <div style={{
-              fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.16em',
-              color: 'var(--accent)', marginBottom: 16, textTransform: 'uppercase',
-            }}>Obfuscation Resistant</div>
-            <h3 style={{
-              fontFamily: 'var(--font-display)', fontWeight: 700,
-              fontSize: 'clamp(22px, 3vw, 36px)',
-              letterSpacing: '-0.025em', color: 'var(--text-primary)',
-              lineHeight: 1.15, marginBottom: 16,
-            }}>Built for the real internet.</h3>
-            <p style={{
-              fontFamily: 'var(--font-body)', fontWeight: 300, fontSize: 15,
-              color: 'var(--text-secondary)', lineHeight: 1.8,
-            }}>
-              Social media clips are almost always modified — mirrored, re-colored,
-              sped up, or heavily compressed. WhatSource generates standard
-              and flipped embeddings and applies normalization filters so even
-              degraded frames match correctly.
-            </p>
-          </div>
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-            {[
-              'Mirrored / horizontally flipped frames',
-              'Color grading & saturation shifts',
-              'Speed-altered video clips',
-              'Heavy social media compression',
-              'Cropped or zoomed scenes',
-            ].map((feat, i) => (
-              <div key={i} style={{
-                display: 'flex', alignItems: 'center', gap: 12,
-              }}>
-                <div style={{
-                  width: 18, height: 18, borderRadius: '50%', flexShrink: 0,
-                  background: 'rgba(59,130,246,0.15)',
-                  border: '1px solid rgba(59,130,246,0.3)',
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                }}>
-                  <svg width="9" height="9" viewBox="0 0 12 12" fill="none">
-                    <polyline points="2,6 5,9 10,3" stroke="var(--accent)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                </div>
-                <span style={{
-                  fontFamily: 'var(--font-body)', fontSize: 14,
-                  color: 'var(--text-secondary)',
-                }}>{feat}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* ── FOOTER ── */}
-      <footer style={{
-        borderTop: '1px solid rgba(255,255,255,0.04)',
-        padding: '32px clamp(24px, 4vw, 80px)',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        maxWidth: 1280, margin: '0 auto',
-      }}>
-        <Logo size={18} opacity={0.5} />
-        <span style={{
-          fontFamily: 'var(--font-mono)', fontSize: 10.5,
-          color: 'var(--text-faint)', letterSpacing: '0.06em',
-        }}>© 2025 · PROTOTYPE v0.1.0 · BUILT WITH MOCK DATA</span>
-      </footer>
-    </div>
-  );
-}
-
-function StatBlock({ value, label, sub }) {
-  return (
-    <div style={{ textAlign: 'center' }}>
-      <div style={{
-        fontFamily: 'var(--font-mono)', fontWeight: 400, letterSpacing: '-0.02em',
-        fontSize: 'clamp(28px, 4vw, 52px)',
-        color: 'var(--text-primary)',
-      }}>{value}</div>
-      <div style={{
-        fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 14,
-        color: 'var(--text-secondary)', marginTop: 4,
-      }}>{label}</div>
-      <div style={{
-        fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '0.1em',
-        color: 'var(--text-muted)', marginTop: 4,
-      }}>{sub}</div>
+      <div style={{ fontFamily: 'var(--fm)', fontSize: 40, fontWeight: 400, color: h ? 'rgba(255,229,0,0.12)' : 'rgba(255,255,255,0.05)', lineHeight: 1, marginBottom: 28 }}>{n}</div>
+      <div style={{ fontFamily: 'var(--fd)', fontWeight: 700, fontSize: 20, letterSpacing: '-0.02em', color: 'var(--white)', marginBottom: 12 }}>{title}</div>
+      <div style={{ fontFamily: 'var(--fb)', fontWeight: 300, fontSize: 14, color: 'var(--text-2)', lineHeight: 1.75 }}>{desc}</div>
     </div>
   );
 }
