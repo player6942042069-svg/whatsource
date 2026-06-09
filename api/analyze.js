@@ -127,51 +127,59 @@ async function runTraceMoe(imageBase64, mimeType) {
   }
 }
 
-// ── STEP 2b: Google Gemini Vision ────────────────────────────────────
+// ── STEP 2b: Vision AI via OpenRouter (uses Gemini Flash) ───────────
 async function runGemini(imageBase64, mimeType) {
   try {
-    const key = process.env.GEMINI_API_KEY;
+    const key = process.env.OPENROUTER_API_KEY;
+    if (!key) { console.warn('OPENROUTER_API_KEY not set'); return null; }
+
     const prompt = `Identify the movie, TV show, anime, K-drama, or any entertainment content shown in this image. Look at visual clues like art style, costumes, settings, characters, logos, and film style.
 
 Respond with ONLY a JSON object, no extra text, no markdown:
 {"title":"official English title or romanized title","original_title":"title in original language or null","release_year":2023,"media_type":"movie or tv or anime","confidence_score":85,"episode_info":"Season X Episode Y or null","content_warning":"adult or general","reason":"brief reason"}
 
-If unidentifiable, respond: {"title":null,"confidence_score":0,"reason":"cannot identify"}`;
+If unidentifiable: {"title":null,"confidence_score":0,"reason":"cannot identify"}`;
 
     const body = {
-      contents: [{
-        parts: [
-          { inline_data: { mime_type: mimeType, data: imageBase64 } },
-          { text: prompt },
+      model: 'google/gemini-flash-1.5',
+      messages: [{
+        role: 'user',
+        content: [
+          { type: 'image_url', image_url: { url: `data:${mimeType};base64,${imageBase64}` } },
+          { type: 'text', text: prompt },
         ],
       }],
-      generationConfig: { temperature: 0.1, maxOutputTokens: 1024 },
+      max_tokens: 1024,
+      temperature: 0.1,
     };
 
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${key}`,
-      { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
-    );
+    const r = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${key}`,
+        'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://whatsource.vercel.app',
+        'X-Title': 'WhatSource',
+      },
+      body: JSON.stringify(body),
+    });
+
     const d = await r.json();
+    if (d.error) { console.warn('OpenRouter error:', JSON.stringify(d.error)); return null; }
 
-    // Log full response for debugging
-    if (d.error) { console.warn('Gemini API error:', JSON.stringify(d.error)); return null; }
-    if (!d.candidates?.length) { console.warn('Gemini: no candidates, likely safety block. promptFeedback:', JSON.stringify(d.promptFeedback)); return null; }
+    const text = d.choices?.[0]?.message?.content || '';
+    if (!text.trim()) { console.warn('OpenRouter: empty response'); return null; }
 
-    const text = d.candidates[0]?.content?.parts?.[0]?.text || '';
-    if (!text.trim()) { console.warn('Gemini: empty text response'); return null; }
-
-    // Robustly extract JSON - find outermost { } block
     const jsonMatch = text.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) { console.warn('Gemini: no JSON in response:', text.slice(0, 300)); return null; }
+    if (!jsonMatch) { console.warn('OpenRouter: no JSON found in:', text.slice(0, 300)); return null; }
 
     let parsed;
     try { parsed = JSON.parse(jsonMatch[0]); }
-    catch (pe) { console.warn('Gemini JSON parse error:', pe.message, '| Raw:', jsonMatch[0].slice(0, 200)); return null; }
+    catch (pe) { console.warn('OpenRouter JSON parse error:', pe.message); return null; }
 
     if (!parsed.title || parsed.confidence_score < 60) return null;
     return {
-      source: 'gemini',
+      source: 'gemini-via-openrouter',
       title: parsed.title,
       originalTitle: parsed.original_title,
       mediaType: parsed.media_type || 'movie',
@@ -183,7 +191,7 @@ If unidentifiable, respond: {"title":null,"confidence_score":0,"reason":"cannot 
       reason: parsed.reason,
     };
   } catch (e) {
-    console.warn('Gemini failed:', e.message);
+    console.warn('OpenRouter vision failed:', e.message);
     return null;
   }
 }
