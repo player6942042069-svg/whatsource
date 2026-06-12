@@ -141,7 +141,7 @@ Respond with ONLY a JSON object, no extra text, no markdown:
 If unidentifiable: {"title":null,"confidence_score":0,"reason":"cannot identify"}`;
 
     const body = {
-      model: 'google/gemini-flash-1.5',
+      model: 'google/gemini-1.5-flash',
       messages: [{
         role: 'user',
         content: [
